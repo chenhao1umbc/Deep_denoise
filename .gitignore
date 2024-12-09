@@ -1,7 +1,7 @@
 # my own
-.avi
-.pdf
-.tif
+*.avi
+*.pdf
+*.tif
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
