@@ -15,4 +15,4 @@ plt.xlabel('x')
 plt.ylabel('ln(x)')
 plt.grid(True)
 
-#%%
+#%%``

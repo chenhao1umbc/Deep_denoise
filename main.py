@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
-import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
-import cv2
-import numpy as np
+import imageio.v3 as iio
 from PIL import Image
 import os
 import math
+import numpy as np
+from PIL import ImageOps
 
 # Custom dataset class to handle both .tif images and .avi videos
 class DenoiseDataset(Dataset):
@@ -28,15 +28,13 @@ class DenoiseDataset(Dataset):
         
         if file_path.endswith('.tif'):
             # Handle .tif files
-            image = Image.open(file_path)
-            image = np.array(image)
+            image = Image.open(file_path).convert('RGB')
+            image = np.array(image) / 255.0
         else:
-            # Handle .avi files - take first frame for now
-            cap = cv2.VideoCapture(file_path)
-            ret, image = cap.read()
-            cap.release()
-            if ret:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            # Handle .avi files using imageio
+            reader = iio.imiter(file_path)
+            image = next(reader)  # Get first frame
+            image = image / 255.0
         
         if self.transform:
             image = self.transform(image)
@@ -113,35 +111,53 @@ class DiffusionModel(nn.Module):
         return x_noisy, noise
 
 def add_noise(image, noise_factor=0.1):
-    noise = torch.randn_like(image) * noise_factor
+    if isinstance(image, torch.Tensor):
+        noise = torch.randn_like(image) * noise_factor
+    else:
+        noise = torch.randn_like(torch.from_numpy(image)) * noise_factor
     noisy_image = image + noise
     return torch.clamp(noisy_image, 0., 1.)
 
-# Training setup
+# Replace transforms with custom functions
+def resize_image(image, size):
+    return image.resize(size, Image.BILINEAR)
+
+def normalize_image(image, mean, std):
+    image = np.array(image, dtype=np.float32) / 255.0
+    image = (image - np.array(mean)) / np.array(std)
+    return Image.fromarray((image * 255).astype(np.uint8))
+
+# Update the training setup
 def train_model(data_dir, num_epochs=100):
-    # Data preprocessing
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize((256, 256)),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Custom preprocessing function
+    def preprocess(image):
+        # Resize
+        image = resize_image(image, (256, 256))
+        # Normalize
+        image = normalize_image(image, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        # Convert to tensor
+        image = torch.from_numpy(np.array(image, dtype=np.float32)).permute(2, 0, 1)
+        return image
     
     # Create dataset and dataloader
-    dataset = DenoiseDataset(data_dir, transform=transform)
+    dataset = DenoiseDataset(data_dir, transform=preprocess)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
     
     # Initialize model, loss, and optimizer
-    model = DiffusionModel()
+    model = DiffusionModel().to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     
     # Training loop with diffusion
     for epoch in range(num_epochs):
         for batch_idx, (_, clean_images) in enumerate(dataloader):
+            clean_images = clean_images.to(device)
             optimizer.zero_grad()
             
             # Sample random timesteps
-            t = torch.randint(0, model.n_steps, (clean_images.shape[0],))
+            t = torch.randint(0, model.n_steps, (clean_images.shape[0],)).to(device)
             
             # Apply forward diffusion
             x_noisy, noise = model.diffusion_step(clean_images, t)
@@ -161,12 +177,14 @@ def train_model(data_dir, num_epochs=100):
 
 @torch.no_grad()
 def denoise_sample(model, noisy_image, n_steps=100):
-    x = noisy_image
+    device = next(model.parameters()).device
+    x = noisy_image.to(device)
+    
     for t in reversed(range(n_steps)):
-        t_tensor = torch.tensor([t]).float()
+        t_tensor = torch.tensor([t], device=device).float()
         predicted_noise = model(x, t_tensor)
-        alpha_t = model.alpha_bar[t]
-        alpha_prev = model.alpha_bar[t-1] if t > 0 else torch.tensor(1.)
+        alpha_t = model.alpha_bar[t].to(device)
+        alpha_prev = model.alpha_bar[t-1].to(device) if t > 0 else torch.tensor(1.).to(device)
         
         # Reverse diffusion step
         x = (1 / torch.sqrt(alpha_t)) * (x - ((1 - alpha_t) / torch.sqrt(1 - alpha_t)) * predicted_noise)
@@ -175,7 +193,7 @@ def denoise_sample(model, noisy_image, n_steps=100):
             sigma_t = torch.sqrt((1 - alpha_prev) / (1 - alpha_t)) * torch.sqrt(1 - alpha_t / alpha_prev)
             x = x + sigma_t * noise
     
-    return x
+    return x.cpu()
 
 if __name__ == "__main__":
     data_dir = "path/to/your/data"  # Update this path
