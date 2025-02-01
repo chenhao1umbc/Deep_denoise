@@ -4,9 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import imageio.v3 as iio
 from PIL import Image
 import os
-import math
 import numpy as np
-from PIL import ImageOps
 
 # Custom dataset class to handle both .tif images and .avi videos
 class DenoiseDataset(Dataset):
@@ -43,7 +41,7 @@ class DenoiseDataset(Dataset):
         noisy_image = add_noise(image)
         return noisy_image, image
 
-# Simple UNet-style model for diffusion
+# Simplified UNet-style model for diffusion
 class DiffusionModel(nn.Module):
     def __init__(self, n_steps=1000):
         super(DiffusionModel, self).__init__()
@@ -54,7 +52,7 @@ class DiffusionModel(nn.Module):
         self.alpha = 1. - self.beta
         self.alpha_bar = torch.cumprod(self.alpha, dim=0)
         
-        # Enhanced UNet backbone
+        # Time embedding
         self.time_embed = nn.Sequential(
             nn.Linear(1, 64),
             nn.SiLU(),
@@ -62,24 +60,19 @@ class DiffusionModel(nn.Module):
         )
         
         # Encoder
-        self.enc1 = nn.ModuleList([
+        self.enc1 = nn.Sequential(
             nn.Conv2d(3, 64, 3, padding=1),
             nn.GroupNorm(8, 64),
             nn.SiLU(),
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.GroupNorm(8, 64),
-            nn.SiLU(),
-        ])
-        self.pool1 = nn.MaxPool2d(2, 2)
+        )
         
-        # Decoder with time embedding
-        self.up1 = nn.ConvTranspose2d(64, 64, 2, stride=2)
-        self.dec1 = nn.ModuleList([
-            nn.Conv2d(128 + 64, 64, 3, padding=1),  # +64 for time embedding
+        # Decoder
+        self.dec1 = nn.Sequential(
+            nn.Conv2d(64 + 64, 64, 3, padding=1),  # +64 for time embedding
             nn.GroupNorm(8, 64),
             nn.SiLU(),
             nn.Conv2d(64, 3, 3, padding=1),
-        ])
+        )
 
     def forward(self, x, t):
         # Time embedding
@@ -87,18 +80,11 @@ class DiffusionModel(nn.Module):
         t_emb = t_emb.view(-1, 64, 1, 1).expand(-1, -1, x.shape[2], x.shape[3])
         
         # Encoder
-        e1 = x
-        for layer in self.enc1:
-            e1 = layer(e1)
-        p1 = self.pool1(e1)
+        e1 = self.enc1(x)
         
         # Decoder with time embedding
-        up1 = self.up1(p1)
-        concat1 = torch.cat([up1, e1, t_emb], dim=1)
-        out = concat1
-        for layer in self.dec1:
-            out = layer(out)
-        return out
+        concat1 = torch.cat([e1, t_emb], dim=1)
+        return self.dec1(concat1)
 
     def diffusion_step(self, x_t, t):
         # Get noise schedule for current step
@@ -118,28 +104,14 @@ def add_noise(image, noise_factor=0.1):
     noisy_image = image + noise
     return torch.clamp(noisy_image, 0., 1.)
 
-# Replace transforms with custom functions
-def resize_image(image, size):
-    return image.resize(size, Image.BILINEAR)
+def preprocess(image):
+    # Resize and convert to tensor
+    image = image.resize((256, 256), Image.BILINEAR)
+    image = torch.from_numpy(np.array(image, dtype=np.float32)).permute(2, 0, 1)
+    return image
 
-def normalize_image(image, mean, std):
-    image = np.array(image, dtype=np.float32) / 255.0
-    image = (image - np.array(mean)) / np.array(std)
-    return Image.fromarray((image * 255).astype(np.uint8))
-
-# Update the training setup
 def train_model(data_dir, num_epochs=100):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Custom preprocessing function
-    def preprocess(image):
-        # Resize
-        image = resize_image(image, (256, 256))
-        # Normalize
-        image = normalize_image(image, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        # Convert to tensor
-        image = torch.from_numpy(np.array(image, dtype=np.float32)).permute(2, 0, 1)
-        return image
     
     # Create dataset and dataloader
     dataset = DenoiseDataset(data_dir, transform=preprocess)
