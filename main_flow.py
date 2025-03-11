@@ -1,13 +1,10 @@
+# %%
 import copy
 import json
 import os
 import warnings
 import torch
 from tensorboardX import SummaryWriter
-from tqdm import trange
-import numpy as np
-import pickle
-
 from utils import (
     UNet,
     GaussianDiffusionTrainer,
@@ -19,6 +16,7 @@ from utils import (
     save_image,
     evaluate,
     load_cifar10,
+    trange,
 )
 
 # Define configuration parameters
@@ -63,7 +61,12 @@ num_images = 50000
 fid_use_torch = False
 fid_cache = "./stats/cifar10.train.npz"
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda:0")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
 
 
 def train():
@@ -301,18 +304,14 @@ def eval():
     )
 
 
-def main():
-    # suppress annoying inception_v3 initialization warning
-    warnings.simplefilter(action="ignore", category=FutureWarning)
-    if train_mode:
-        train()
-    if eval_mode:
-        eval()
-    if not train_mode and not eval_mode:
-        print(
-            "Set train_mode=True and/or eval_mode=True to execute corresponding tasks"
-        )
+# %%
+# suppress annoying inception_v3 initialization warning
+warnings.simplefilter(action="ignore", category=FutureWarning)
+if train_mode:
+    train()
+if eval_mode:
+    eval()
+if not train_mode and not eval_mode:
+    print("Set train_mode=True and/or eval_mode=True to execute corresponding tasks")
 
-
-if __name__ == "__main__":
-    main()
+# %%
