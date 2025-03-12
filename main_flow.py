@@ -198,9 +198,10 @@ def train():
                 net_model.eval()
                 with torch.no_grad():
                     x_0 = ema_sampler(x_T)
-                    grid = (make_grid(x_0) + 1) / 2
                     path = os.path.join(logdir, "sample", "%d.png" % step)
-                    save_image(grid, path)
+                    save_image(x_0, path)
+                    # Create grid for tensorboard
+                    grid = (make_grid(x_0) + 1) / 2
                     writer.add_image("sample", grid, step)
                 net_model.train()
 

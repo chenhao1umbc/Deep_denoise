@@ -482,6 +482,8 @@ def make_grid(images, nrow=8):
 
 def save_image(tensor, path, nrow=8):
     """Save a tensor as an image"""
+    # Normalize the tensor to [0, 1] range
+    tensor = (tensor + 1) / 2
     grid = make_grid(tensor, nrow=nrow)
     # Convert to numpy and transpose to HWC format
     grid = grid.cpu().numpy().transpose(1, 2, 0)
