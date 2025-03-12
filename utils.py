@@ -1,3 +1,4 @@
+import os
 import math
 import pickle
 import numpy as np
@@ -15,7 +16,7 @@ elif torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
-
+torch.set_default_dtype(torch.float32)
 # ===== MODEL COMPONENTS =====
 
 
@@ -280,7 +281,7 @@ class GaussianDiffusionTrainer(nn.Module):
         self.model = model
         self.T = T
 
-        self.register_buffer("betas", torch.linspace(beta_1, beta_T, T).double())
+        self.register_buffer("betas", torch.linspace(beta_1, beta_T, T).float())
         alphas = 1.0 - self.betas
         alphas_bar = torch.cumprod(alphas, dim=0)
 
@@ -323,7 +324,7 @@ class GaussianDiffusionSampler(nn.Module):
         self.mean_type = mean_type
         self.var_type = var_type
 
-        self.register_buffer("betas", torch.linspace(beta_1, beta_T, T).double())
+        self.register_buffer("betas", torch.linspace(beta_1, beta_T, T).float())
         alphas = 1.0 - self.betas
         alphas_bar = torch.cumprod(alphas, dim=0)
         alphas_bar_prev = F.pad(alphas_bar, [1, 0], value=1)[:T]

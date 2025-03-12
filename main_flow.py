@@ -21,7 +21,7 @@ from utils import (
 
 # Define configuration parameters
 # General settings
-train_mode = False
+train_mode = True
 eval_mode = False
 
 # UNet parameters
@@ -291,6 +291,7 @@ def eval():
         device,
         fid_cache,
         fid_use_torch,
+        dtype=torch.float32,  # Explicitly set dtype for evaluation
     )
     print("Model(EMA): IS:%6.3f(%.3f), FID:%7.3f" % (IS, IS_std, FID))
 
