@@ -312,11 +312,21 @@ def eval():
 # %%
 # suppress annoying inception_v3 initialization warning
 warnings.simplefilter(action="ignore", category=FutureWarning)
-if train_mode:
-    train()
-if eval_mode:
-    eval()
-if not train_mode and not eval_mode:
-    print("Set train_mode=True and/or eval_mode=True to execute corresponding tasks")
+
+# Add multiprocessing safeguard
+if __name__ == "__main__":
+    # This ensures multiprocessing works correctly
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+
+    if train_mode:
+        train()
+    if eval_mode:
+        eval()
+    if not train_mode and not eval_mode:
+        print(
+            "Set train_mode=True and/or eval_mode=True to execute corresponding tasks"
+        )
 
 # %%
