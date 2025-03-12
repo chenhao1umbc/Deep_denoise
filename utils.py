@@ -495,104 +495,108 @@ def save_image(tensor, path, nrow=8):
 # ===== DATASET FUNCTIONS =====
 
 
+class Compose:
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, img):
+        for t in self.transforms:
+            img = t(img)
+        return img
+
+
+class ToTensor:
+    def __call__(self, pic):
+        img = np.array(pic, dtype=np.float32) / 255.0
+        img = img.transpose((2, 0, 1))  # Convert HWC to CHW
+        return torch.from_numpy(img)
+
+
+class Normalize:
+    def __init__(self, mean, std):
+        self.mean = torch.tensor(mean, dtype=torch.float32).view(-1, 1, 1)
+        self.std = torch.tensor(std, dtype=torch.float32).view(-1, 1, 1)
+
+    def __call__(self, tensor):
+        return (tensor - self.mean) / self.std
+
+
+class RandomHorizontalFlip:
+    def __call__(self, img):
+        import random
+
+        if random.random() < 0.5:
+            return img.transpose(Image.FLIP_LEFT_RIGHT)
+        return img
+
+
+class CIFAR10:
+    def __init__(self, root, train=True, transform=None, download=True):
+        self.root = root
+        self.train = train
+        self.transform = transform
+
+        if download:
+            self.download()
+
+        if train:
+            files = [
+                "data_batch_1",
+                "data_batch_2",
+                "data_batch_3",
+                "data_batch_4",
+                "data_batch_5",
+            ]
+        else:
+            files = ["test_batch"]
+
+        self.data = []
+        self.targets = []
+
+        for file in files:
+            file_path = os.path.join(root, "cifar-10-batches-py", file)
+            with open(file_path, "rb") as f:
+                entry = pickle.load(f, encoding="latin1")
+                self.data.append(entry["data"])
+                self.targets.extend(entry["labels"])
+
+        self.data = np.vstack(self.data).reshape(-1, 3, 32, 32)
+        self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        return img, target
+
+    def __len__(self):
+        return len(self.data)
+
+    def download(self):
+        import tarfile
+        import urllib.request
+
+        if os.path.exists(os.path.join(self.root, "cifar-10-batches-py")):
+            return
+
+        os.makedirs(self.root, exist_ok=True)
+
+        url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
+        filename = os.path.join(self.root, "cifar-10-python.tar.gz")
+
+        if not os.path.exists(filename):
+            print(f"Downloading {url} to {filename}")
+            urllib.request.urlretrieve(url, filename)
+
+        with tarfile.open(filename, "r:gz") as tar:
+            tar.extractall(path=self.root)
+
+
 def load_cifar10(root="./data", train=True, download=True):
     """Load CIFAR10 dataset without torchvision"""
-
-    class CIFAR10:
-        def __init__(self, root, train=True, transform=None, download=True):
-            self.root = root
-            self.train = train
-            self.transform = transform
-
-            if download:
-                self.download()
-
-            if train:
-                files = [
-                    "data_batch_1",
-                    "data_batch_2",
-                    "data_batch_3",
-                    "data_batch_4",
-                    "data_batch_5",
-                ]
-            else:
-                files = ["test_batch"]
-
-            self.data = []
-            self.targets = []
-
-            for file in files:
-                file_path = os.path.join(root, "cifar-10-batches-py", file)
-                with open(file_path, "rb") as f:
-                    entry = pickle.load(f, encoding="latin1")
-                    self.data.append(entry["data"])
-                    self.targets.extend(entry["labels"])
-
-            self.data = np.vstack(self.data).reshape(-1, 3, 32, 32)
-            self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
-
-        def __getitem__(self, index):
-            img, target = self.data[index], self.targets[index]
-            img = Image.fromarray(img)
-
-            if self.transform is not None:
-                img = self.transform(img)
-
-            return img, target
-
-        def __len__(self):
-            return len(self.data)
-
-        def download(self):
-            import tarfile
-            import urllib.request
-
-            if os.path.exists(os.path.join(self.root, "cifar-10-batches-py")):
-                return
-
-            os.makedirs(self.root, exist_ok=True)
-
-            url = "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz"
-            filename = os.path.join(self.root, "cifar-10-python.tar.gz")
-
-            if not os.path.exists(filename):
-                print(f"Downloading {url} to {filename}")
-                urllib.request.urlretrieve(url, filename)
-
-            with tarfile.open(filename, "r:gz") as tar:
-                tar.extractall(path=self.root)
-
-    class Compose:
-        def __init__(self, transforms):
-            self.transforms = transforms
-
-        def __call__(self, img):
-            for t in self.transforms:
-                img = t(img)
-            return img
-
-    class ToTensor:
-        def __call__(self, pic):
-            img = np.array(pic, dtype=np.float32) / 255.0
-            img = img.transpose((2, 0, 1))  # Convert HWC to CHW
-            return torch.from_numpy(img)
-
-    class Normalize:
-        def __init__(self, mean, std):
-            self.mean = torch.tensor(mean).view(-1, 1, 1)
-            self.std = torch.tensor(std).view(-1, 1, 1)
-
-        def __call__(self, tensor):
-            return (tensor - self.mean) / self.std
-
-    class RandomHorizontalFlip:
-        def __call__(self, img):
-            import random
-
-            if random.random() < 0.5:
-                return img.transpose(Image.FLIP_LEFT_RIGHT)
-            return img
-
     transform = Compose(
         [
             RandomHorizontalFlip(),
@@ -623,7 +627,10 @@ def evaluate(
         desc = "generating images"
         for i in trange(0, num_images, batch_size, desc=desc):
             current_batch_size = min(batch_size, num_images - i)
-            x_T = torch.randn((current_batch_size, 3, img_size, img_size))
+            # Explicitly set dtype to float32 for MPS compatibility
+            x_T = torch.randn(
+                (current_batch_size, 3, img_size, img_size), dtype=torch.float32
+            )
             batch_images = sampler(x_T.to(device)).cpu()
             images.append((batch_images + 1) / 2)
         images = torch.cat(images, dim=0).numpy()
@@ -685,11 +692,11 @@ def get_inception_and_fid_score(
         model = torch.nn.DataParallel(model)
 
     if use_torch:
-        fid_acts = torch.empty((num_images, 2048)).to(device)
-        is_probs = torch.empty((num_images, 1008)).to(device)
+        fid_acts = torch.empty((num_images, 2048), dtype=torch.float32).to(device)
+        is_probs = torch.empty((num_images, 1008), dtype=torch.float32).to(device)
     else:
-        fid_acts = np.empty((num_images, 2048))
-        is_probs = np.empty((num_images, 1008))
+        fid_acts = np.empty((num_images, 2048), dtype=np.float32)
+        is_probs = np.empty((num_images, 1008), dtype=np.float32)
 
     iterator = iter(
         tqdm(
@@ -759,8 +766,8 @@ def get_inception_and_fid_score(
     if use_torch:
         m1 = torch.mean(fid_acts, axis=0)
         s1 = torch_cov(fid_acts, rowvar=False)
-        m2 = torch.tensor(m2).to(m1.dtype).to(device)
-        s2 = torch.tensor(s2).to(s1.dtype).to(device)
+        m2 = torch.tensor(m2, dtype=torch.float32).to(device)
+        s2 = torch.tensor(s2, dtype=torch.float32).to(device)
     else:
         m1 = np.mean(fid_acts, axis=0)
         s1 = np.cov(fid_acts, rowvar=False)

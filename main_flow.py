@@ -68,6 +68,9 @@ elif torch.backends.mps.is_available():
 else:
     device = torch.device("cpu")
 
+# Ensure all tensors are float32 for MPS compatibility
+torch.set_default_dtype(torch.float32)
+
 
 def train():
     # dataset
@@ -124,11 +127,13 @@ def train():
 
     # log setup
     os.makedirs(os.path.join(logdir, "sample"), exist_ok=True)
-    x_T = torch.randn(sample_size, 3, img_size, img_size)
+    x_T = torch.randn(sample_size, 3, img_size, img_size, dtype=torch.float32)
     x_T = x_T.to(device)
 
     # Get a batch of real samples for reference
-    real_samples = next(iter(dataloader))[0][:sample_size]
+    data_iter = iter(dataloader)
+    real_batch = next(data_iter)
+    real_samples = real_batch[0][:sample_size]
     grid = (make_grid(real_samples) + 1) / 2
 
     writer = SummaryWriter(logdir)
@@ -291,7 +296,6 @@ def eval():
         device,
         fid_cache,
         fid_use_torch,
-        dtype=torch.float32,  # Explicitly set dtype for evaluation
     )
     print("Model(EMA): IS:%6.3f(%.3f), FID:%7.3f" % (IS, IS_std, FID))
 
@@ -299,7 +303,7 @@ def eval():
     os.makedirs(logdir, exist_ok=True)
 
     save_image(
-        torch.tensor(samples[:256]),
+        torch.tensor(samples[:256], dtype=torch.float32),
         os.path.join(logdir, "samples_ema.png"),
         nrow=16,
     )
