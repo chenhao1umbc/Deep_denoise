@@ -23,6 +23,9 @@ __pycache__/
 *.pth.tar.xz
 *.pth.tar.lzma
 
+*.pdf
+*.tif
+*.avi
 # C extensions
 *.so
 
